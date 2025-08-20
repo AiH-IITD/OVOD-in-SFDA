@@ -73,6 +73,9 @@ def get_args_parser(parser):
                              "'teaching_standard' for teaching standard process,"
                              "'teaching_mask' for teaching with mask process,"
                              "'eval' for evaluation only.")
+    # Choice of detector to adapt
+    parser.add_argument("--detector", default="def_detr", type=str,
+                        help="Choose from 'def_detr' or 'fnd'.")
     # Other settings
     parser.add_argument('--device', default='cuda', type=str)
     parser.add_argument('--output_dir', default='./output', type=str)
@@ -81,6 +84,40 @@ def get_args_parser(parser):
     parser.add_argument('--print_freq', default=100, type=int)
     parser.add_argument('--flush', default=True, type=bool)
     parser.add_argument("--resume", default="", type=str)
+    # FND Custom arguments
+    parser.add_argument('--config_file', '-c', type=str, required=True)
+    parser.add_argument('--options',
+        nargs='+',
+        action=DictAction,
+        help='override some settings in the used config, the key-value pair '
+        'in xxx=yyy format will be merged into config file.')
+
+    # dataset parameters
+    parser.add_argument('--dataset_file', default='coco')
+    parser.add_argument('--remove_difficult', action='store_true')
+    parser.add_argument('--fix_size', action='store_true')
+
+
+    # training parameters
+    parser.add_argument('--seed', default=42, type=int)
+    parser.add_argument('--finetune_ignore', type=str, nargs='+')
+    parser.add_argument('--test', action='store_true')
+    parser.add_argument('--debug', action='store_true')
+    parser.add_argument('--find_unused_params', action='store_true')
+    
+
+    parser.add_argument('--save_results', action='store_true')
+    parser.add_argument('--save_log', action='store_true')
+
+    # distributed training parameters
+    # parser.add_argument('--world_size', default=1, type=int,
+    #                     help='number of distributed processes')
+    # parser.add_argument('--dist_url', default='env://', help='url used to set up distributed training')
+    # parser.add_argument('--rank', default=0, type=int,
+    #                     help='number of distributed processes')
+    # parser.add_argument("--local_rank", type=int, default=0, help='local rank for DistributedDataParallel')
+    # parser.add_argument('--amp', action='store_true',
+    #                     help="Train with mixed precision")
 
 
 def set_random_seed(seed):
