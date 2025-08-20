@@ -1,13 +1,43 @@
 import torch
 import copy
+from collections import OrderedDict
 
 
-def resume_and_load(model, ckpt_path, device):
+def clean_state_dict(state_dict):
+    new_state_dict = OrderedDict()
+    for k, v in state_dict.items():
+        if k[:7] == 'module.':
+            k = k[7:]  # remove `module.`
+        new_state_dict[k] = v
+    return new_state_dict
+
+def resume_and_load_fnd(checkpoint, args):
+    from collections import OrderedDict
+    _ignorekeywordlist = args.finetune_ignore if args.finetune_ignore else []
+    ignorelist = []
+
+    def check_keep(keyname, ignorekeywordlist):
+        for keyword in ignorekeywordlist:
+            if keyword in keyname:
+                ignorelist.append(keyname)
+                return False
+        return True
+
+    _tmp_st = OrderedDict({k:v for k, v in clean_state_dict(checkpoint).items() if check_keep(k, _ignorekeywordlist)})
+
+    # _load_output = model.load_state_dict(_tmp_st, strict=False)
+    # print(_load_output)
+    return _tmp_st
+
+def resume_and_load(model, ckpt_path, device, args=None):
     print("Loading checkpoints from", ckpt_path)
     checkpoints = torch.load(ckpt_path, map_location=device)
-    if 'model' in checkpoints.keys() and 'optimizer' in checkpoints.keys():
+    if args is not None and args.detector == 'fnd':
+        checkpoints = resume_and_load_fnd(checkpoints['model'], args)
+        missing_keys, unexpected_keys = model.load_state_dict(checkpoints, strict=False)
+    elif 'model' in checkpoints.keys() and 'optimizer' in checkpoints.keys():
         checkpoints = convert_official_ckpt(checkpoints, model.state_dict())
-    missing_keys, unexpected_keys = model.load_state_dict(checkpoints)
+        missing_keys, unexpected_keys = model.load_state_dict(checkpoints)
     print("Missing keys:", missing_keys)
     print("Unexpected keys:", unexpected_keys)
     return model

@@ -11,7 +11,8 @@ from engine import *
 from build_modules import *
 from datasets.augmentations import train_trans, val_trans, strong_trans
 from utils import get_rank, init_distributed_mode, resume_and_load, save_ckpt, selective_reinitialize
-
+from utils.slconfig import DictAction, SLConfig
+from models_fnd.dino.dino import build_bbox_postprocessor_fnd
 
 def get_args_parser(parser):
     # Model Settings
@@ -170,18 +171,24 @@ def single_domain_training(model, device):
             epoch=epoch,
             clip_max_norm=args.clip_max_norm,
             print_freq=args.print_freq,
-            flush=args.flush
+            flush=args.flush,
+            model_name=args.detector
         )
         # write_loss(epoch, 'single_domain', loss_train)
         lr_scheduler.step()
         # Evaluate
+        if args.detector == 'fnd':
+            postprocessors = build_bbox_postprocessor_fnd(args=args)
+        else:
+            postprocessors = None
         ap50_per_class, loss_val = evaluate(
             model=model,
             criterion=criterion,
             data_loader_val=val_loader,
             device=device,
             print_freq=args.print_freq,
-            flush=args.flush
+            flush=args.flush,
+            postprocessors=postprocessors
         )
         # Save the best checkpoint
         map50 = np.asarray([ap for ap in ap50_per_class if ap > -0.001]).mean().tolist()
@@ -376,7 +383,7 @@ def main():
     device = torch.device(args.device)
     model = build_model(args, device)
     if args.resume != "":
-        model = resume_and_load(model, args.resume, device)
+        model = resume_and_load(model, args.resume, device, args)
     # Training or evaluation
     print('-------------------------------------', flush=args.flush)
     if args.mode == "single_domain":

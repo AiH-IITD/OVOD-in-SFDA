@@ -9,45 +9,126 @@ class CocoStyleDataset(CocoDetection):
 
     img_dirs = {
         'cityscapes': {
-            'train': 'cityscapes/leftImg8bit/train', 'val': 'cityscapes/leftImg8bit/val'
+            'train': 'cityscapes/cityscapes_target/train2017', 'val': 'cityscapes/cityscapes_target/val2017'
         },
         'foggy_cityscapes': {
-            'train': 'foggy_cityscapes/leftImg8bit_foggy/train', 'val': 'foggy_cityscapes/leftImg8bit_foggy/val'
+            'train': 'foggy_cityscapes/leftImg8bit_foggy/train2017', 'val': 'foggy_cityscapes/leftImg8bit_foggy/val2017'
         },
         'bdd100k': {
-            'train': 'bdd100k/images/100k/train', 'val': 'bdd100k/images/100k/val',
+            'train': 'bdd100k/images/100k/train2017', 'val': 'bdd100k/images/100k/val2017',
         },
         'sim10k': {
-            'train': 'sim10k/JPEGImages'
+            'train': 'sim10k/JPEGImages_all'
         },
+        'ddsm' : {
+            'train' : 'DDSM/train2017' , 'val' : 'DDSM/val2017'
+        },
+        'rsna' :{
+            'train' : 'RSNA/train2017' , 'val' : 'RSNA/val2017'
+        },
+        'inbreast': {
+            'train': 'INBreast/test2017', 'val': 'INBreast/test2017', 'test': 'INBreast/test2017',
+        },
+        'kitti': {
+            'train': 'kitti/train2017', 'val': 'kitti/val2017'
+        },
+        'pascal2clipart': {
+            'train': 'pascal_voc/pascalvoc_2012/train2017', 'val': 'pascal_voc/pascalvoc_2012/val2017'
+        },
+        'pascal2watercolor': {
+            'train': 'pascal_voc/pascalvoc_2012/train2017', 'val': 'pascal_voc/pascalvoc_2012/val2017'
+        },
+        'clipart':{
+            'train': 'clipart/train2017', 'val': 'clipart/test2017'
+        },
+        'watercolor':{
+            'train': 'watercolor/train2017', 'val': 'watercolor/test2017'
+        }
     }
     anno_files = {
         'cityscapes': {
             'source': {
-                'train': 'cityscapes/annotations/cityscapes_train_cocostyle.json',
-                'val': 'cityscapes/annotations/cityscapes_val_cocostyle.json',
+                'train': 'cityscapes/dru_annotations/cityscapes_train_cocostyle.json',
+                'val': 'cityscapes/dru_annotations/cityscapes_val_cocostyle.json',
             },
             'target': {
-                'train': 'cityscapes/annotations/cityscapes_train_caronly_cocostyle.json',
-                'val': 'cityscapes/annotations/cityscapes_val_caronly_cocostyle.json'
+                'train': 'cityscapes/dru_annotations/cityscapes_train_caronly_cocostyle.json',
+                'val': 'cityscapes/dru_annotations/cityscapes_val_caronly_cocostyle.json'
             }
         },
         'foggy_cityscapes': {
             'target': {
-                'train': 'foggy_cityscapes/annotations/foggy_cityscapes_train_cocostyle.json',
-                'val': 'foggy_cityscapes/annotations/foggy_cityscapes_val_cocostyle.json'
+                'train': 'foggy_cityscapes/dru_annotations/foggy_cityscapes_train_cocostyle.json',
+                'val': 'foggy_cityscapes/dru_annotations/foggy_cityscapes_val_cocostyle.json'
             }
         },
         'bdd100k': {
             'target': {
-                'train': 'bdd100k/annotations/bdd100k_daytime_train_cocostyle.json',
-                'val': 'bdd100k/annotations/bdd100k_daytime_val_cocostyle.json'
+                'train': 'bdd100k/images/100k/annotations/bdd100k_daytime_train_cocostyle.json',
+                'val': 'bdd100k/images/100k/annotations/bdd100k_daytime_val_cocostyle.json'
             },
         },
         'sim10k': {
             'source': {
                 'train': 'sim10k/annotations/sim10k_train_cocostyle.json',
             },
+        },
+        'ddsm' : {
+            'source' : {
+                'train' : 'DDSM/annotations/instances_train2017.json', 
+                'val' : 'DDSM/annotations/instances_val2017.json',
+            },
+            'target' : {
+                'train' : 'DDSM/annotations/instances_train2017.json', 
+                'val' : 'DDSM/annotations/instances_val2017.json',
+            }
+        },
+        'rsna' : {
+            'source' : {
+                'train' : 'RSNA/annotations/instances_train2017.json',
+                'val' : 'RSNA/annotations/instances_val2017.json',
+            },
+            'target' : {
+                'train' : 'RSNA/annotations/instances_train2017.json',
+                'val' : 'RSNA/annotations/instances_val2017.json',
+            }
+        },
+        'inbreast' : {
+            'target' : {
+                'train' : 'INBreast/annotations_catid_1/image_info_test-dev2017.json',
+                'val' : 'INBreast/annotations_catid_1/image_info_test-dev2017.json',
+                'test': 'INBreast/annotations_catid_1/image_info_test-dev2017.json',
+            }
+        },
+        'kitti': {
+            'source': {
+                'train': 'kitti/annotations/instances_train2017.json',
+                'val': 'kitti/annotations/image_info_test-dev2017.json'
+            }
+        },
+        'pascal2clipart':{
+            'source': {
+                'train': 'pascal_voc/pascalvoc_2012/modified_annotations/instances_train2017_pascal2clipart.json',
+                'val': 'pascal_voc/pascalvoc_2012/modified_annotations/instances_val2017_pascal2clipart.json'
+            }
+        },
+        'pascal2watercolor':{
+            'source': {
+                'train': 'pascal_voc/pascalvoc_2012/modified_annotations/instances_train2017_pascal2watercolor.json',
+                'val': 'pascal_voc/pascalvoc_2012/modified_annotations/instances_val2017_pascal2watercolor.json'
+            }
+        },
+        'clipart':{
+            'target':{
+                'train': 'clipart/modified_annotations/clipart_train_cocostyle_index1.json',
+                'val': 'clipart/modified_annotations/clipart_val_cocostyle_index1.json'
+            }
+        },
+        'watercolor':{
+            'target':{
+                'train': 'watercolor/modified_annotations/watercolor_train_cocostyle_index1.json',
+                'val': 'watercolor/modified_annotations/watercolor_val_cocostyle_index1.json'
+            }
         },
     }
 

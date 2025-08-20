@@ -32,7 +32,8 @@ def train_one_epoch_standard(model: torch.nn.Module,
                              epoch: int,
                              clip_max_norm: float = 0.0,
                              print_freq: int = 20,
-                             flush: bool = True):
+                             flush: bool = True,
+                             model_name: str = 'def_detr'):
     """
     Train the standard detection model, using only labelled training set source.
     """
@@ -46,7 +47,10 @@ def train_one_epoch_standard(model: torch.nn.Module,
     epoch_loss_dict = defaultdict(float)
     for i in range(len(data_loader)):
         # Forward
-        out = model(images, masks)
+        if model_name == 'fnd':
+            out = model(images, masks, annotations)
+        else:
+            out = model(images, masks)
         # Loss
         loss, loss_dict = criterion(out, annotations)
         # Backward
@@ -356,7 +360,8 @@ def evaluate(model: torch.nn.Module,
              device: torch.device,
              print_freq: int,
              output_result_labels: bool = False,
-             flush: bool = False):
+             flush: bool = False,
+             postprocessors: dict = None):
     start_time = time.time()
     model.eval()
     criterion.eval()
@@ -405,7 +410,10 @@ def evaluate(model: torch.nn.Module,
                   'total loss: ' + str(loss.detach().cpu().numpy()), flush=flush)
         # mAP
         orig_image_sizes = torch.stack([anno['orig_size'] for anno in annotations], dim=0)
-        results = post_process(logit_all[-1], boxes_all[-1], orig_image_sizes, 100)
+        if postprocessors is None:
+            results = post_process(logit_all[-1], boxes_all[-1], orig_image_sizes, 100)
+        else:
+            results = postprocessors['bbox'](out, orig_image_sizes)
         results = {anno['image_id'].item(): res for anno, res in zip(annotations, results)}
         evaluator.update(results)
     evaluator.synchronize_between_processes()
