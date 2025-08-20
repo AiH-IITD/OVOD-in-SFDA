@@ -8,6 +8,10 @@ from models.deformable_detr import DeformableDETR
 from models.deformable_transformer import DeformableTransformer
 from models.criterion import SetCriterion
 from datasets.augmentations import weak_aug, strong_aug, base_trans
+# FND files
+from utils.slconfig import SLConfig
+from models_fnd.dino.dino import build_dino, build_dino_criterion
+from utils.get_param_dicts import get_param_dict
 
 
 def build_sampler(args, dataset, split):
@@ -57,65 +61,94 @@ def build_dataloader_teaching(args, dataset_name, domain, split):
 
 
 def build_model(args, device):
-    if args.backbone == 'resnet50':
-        backbone = ResNet50MultiScale()
-    elif args.backbone == 'resnet18':
-        backbone = ResNet18MultiScale()
-    elif args.backbone == 'resnet101':
-        backbone = ResNet101MultiScale()
-    else:
-        raise ValueError('Invalid args.backbone name: ' + args.backbone)
-    position_encoding = PositionEncodingSine()
-    transformer = DeformableTransformer(
-        hidden_dim=args.hidden_dim,
-        num_heads=args.num_heads,
-        num_encoder_layers=args.num_encoder_layers,
-        num_decoder_layers=args.num_decoder_layers,
-        feedforward_dim=args.feedforward_dim,
-        dropout=args.dropout
-    )
-    model = DeformableDETR(
-        backbone=backbone,
-        position_encoding=position_encoding,
-        transformer=transformer,
-        num_classes=args.num_classes,
-        num_queries=args.num_queries,
-        num_feature_levels=args.num_feature_levels
-    )
+    if args.detector == "def_detr":
+        if args.backbone == 'resnet50':
+            backbone = ResNet50MultiScale()
+        elif args.backbone == 'resnet18':
+            backbone = ResNet18MultiScale()
+        elif args.backbone == 'resnet101':
+            backbone = ResNet101MultiScale()
+        else:
+            raise ValueError('Invalid args.backbone name: ' + args.backbone)
+        position_encoding = PositionEncodingSine()
+        transformer = DeformableTransformer(
+            hidden_dim=args.hidden_dim,
+            num_heads=args.num_heads,
+            num_encoder_layers=args.num_encoder_layers,
+            num_decoder_layers=args.num_decoder_layers,
+            feedforward_dim=args.feedforward_dim,
+            dropout=args.dropout
+        )
+        model = DeformableDETR(
+            backbone=backbone,
+            position_encoding=position_encoding,
+            transformer=transformer,
+            num_classes=args.num_classes,
+            num_queries=args.num_queries,
+            num_feature_levels=args.num_feature_levels
+        )
+    elif args.detector == "fnd":
+        # TODO
+        cfg = SLConfig.fromfile(args.config_file)
+        if args.options is not None:
+            cfg.merge_from_dict(args.options)
+        cfg_dict = cfg._cfg_dict.to_dict()
+        args_vars = vars(args)
+        for k,v in cfg_dict.items():
+            if k not in args_vars:
+                setattr(args, k, v)
+            else:
+                raise ValueError("Key {} can used by args only".format(k))
+        # update some new args temporally
+        if not getattr(args, 'use_ema', None):
+            args.use_ema = False
+        if not getattr(args, 'debug', None):
+            args.debug = False
+
+        model = build_dino(args)
+        pass
     model.to(device)
     return model
 
 
 def build_criterion(args, device, only_class_loss=False, high_quality_matches=False):
-    criterion = SetCriterion(
-        num_classes=args.num_classes,
-        coef_class=args.coef_class,
-        coef_boxes=0.0 if only_class_loss else args.coef_boxes,
-        coef_giou=0.0 if only_class_loss else args.coef_giou,
-        alpha_focal=args.alpha_focal,
-        high_quality_matches=high_quality_matches,
-        device=device
-    )
+    if args.detector == 'def_detr':
+        criterion = SetCriterion(
+            num_classes=args.num_classes,
+            coef_class=args.coef_class,
+            coef_boxes=0.0 if only_class_loss else args.coef_boxes,
+            coef_giou=0.0 if only_class_loss else args.coef_giou,
+            alpha_focal=args.alpha_focal,
+            high_quality_matches=high_quality_matches,
+            device=device
+        )
+    elif args.detector == 'fnd':
+        criterion = build_dino_criterion(args)
     criterion.to(device)
     return criterion
 
 
 def build_optimizer(args, model):
-    params_backbone = [param for name, param in model.named_parameters()
-                       if 'backbone' in name]
-    params_linear_proj = [param for name, param in model.named_parameters()
-                          if 'reference_points' in name or 'sampling_offsets' in name]
-    params = [param for name, param in model.named_parameters()
-              if 'backbone' not in name and 'reference_points' not in name and 'sampling_offsets' not in name]
-    param_dicts = [
-        {'params': params, 'lr': args.lr},
-        {'params': params_backbone, 'lr': args.lr_backbone},
-        {'params': params_linear_proj, 'lr': args.lr_linear_proj},
-    ]
-    if args.sgd:
-        optimizer = torch.optim.SGD(param_dicts, lr=args.lr, momentum=0.9, weight_decay=args.weight_decay)
-    else:
-        optimizer = torch.optim.AdamW(param_dicts, lr=args.lr, weight_decay=args.weight_decay)
+    if args.detector == 'def_detr':
+        params_backbone = [param for name, param in model.named_parameters()
+                        if 'backbone' in name]
+        params_linear_proj = [param for name, param in model.named_parameters()
+                            if 'reference_points' in name or 'sampling_offsets' in name]
+        params = [param for name, param in model.named_parameters()
+                if 'backbone' not in name and 'reference_points' not in name and 'sampling_offsets' not in name]
+        param_dicts = [
+            {'params': params, 'lr': args.lr},
+            {'params': params_backbone, 'lr': args.lr_backbone},
+            {'params': params_linear_proj, 'lr': args.lr_linear_proj},
+        ]
+        if args.sgd:
+            optimizer = torch.optim.SGD(param_dicts, lr=args.lr, momentum=0.9, weight_decay=args.weight_decay)
+        else:
+            optimizer = torch.optim.AdamW(param_dicts, lr=args.lr, weight_decay=args.weight_decay)
+    elif args.detector == 'fnd':
+        param_dicts = get_param_dict(args, model)
+        optimizer = torch.optim.AdamW(param_dicts, lr=args.lr,
+                                  weight_decay=args.weight_decay)
     return optimizer
 
 
