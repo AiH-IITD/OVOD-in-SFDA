@@ -19,7 +19,7 @@ import torch, os
 from scipy.optimize import linear_sum_assignment
 from torch import nn
 
-from util.box_ops import box_cxcywh_to_xyxy, generalized_box_iou
+from .box_ops import box_cxcywh_to_xyxy, generalized_box_iou
 
 
 class HungarianMatcher(nn.Module):
@@ -49,8 +49,8 @@ class HungarianMatcher(nn.Module):
         """ Performs the matching
         Params:
             outputs: This is a dict that contains at least these entries:
-                 "pred_logits": Tensor of dim [batch_size, num_queries, num_classes] with the classification logits
-                 "pred_boxes": Tensor of dim [batch_size, num_queries, 4] with the predicted box coordinates
+                 "logit_all": Tensor of dim [batch_size, num_queries, num_classes] with the classification logits
+                 "boxes_all": Tensor of dim [batch_size, num_queries, 4] with the predicted box coordinates
             targets: This is a list of targets (len(targets) = batch_size), where each target is a dict containing:
                  "labels": Tensor of dim [num_target_boxes] (where num_target_boxes is the number of ground-truth
                            objects in the target) containing the class labels
@@ -63,11 +63,11 @@ class HungarianMatcher(nn.Module):
                 len(index_i) = len(index_j) = min(num_queries, num_target_boxes)
         """
 
-        bs, num_queries = outputs["pred_logits"].shape[:2]
+        bs, num_queries = outputs["logit_all"].shape[:2]
 
         # We flatten to compute the cost matrices in a batch
-        out_prob = outputs["pred_logits"].flatten(0, 1).sigmoid()  # [batch_size * num_queries, num_classes]
-        out_bbox = outputs["pred_boxes"].flatten(0, 1)  # [batch_size * num_queries, 4]
+        out_prob = outputs["logit_all"].flatten(0, 1).sigmoid()  # [batch_size * num_queries, num_classes]
+        out_bbox = outputs["boxes_all"].flatten(0, 1)  # [batch_size * num_queries, 4]
 
         # Also concat the target labels and boxes
         tgt_ids = torch.cat([v["labels"] for v in targets])
@@ -122,8 +122,8 @@ class SimpleMinsumMatcher(nn.Module):
         """ Performs the matching
         Params:
             outputs: This is a dict that contains at least these entries:
-                 "pred_logits": Tensor of dim [batch_size, num_queries, num_classes] with the classification logits
-                 "pred_boxes": Tensor of dim [batch_size, num_queries, 4] with the predicted box coordinates
+                 "logit_all": Tensor of dim [batch_size, num_queries, num_classes] with the classification logits
+                 "boxes_all": Tensor of dim [batch_size, num_queries, 4] with the predicted box coordinates
             targets: This is a list of targets (len(targets) = batch_size), where each target is a dict containing:
                  "labels": Tensor of dim [num_target_boxes] (where num_target_boxes is the number of ground-truth
                            objects in the target) containing the class labels
@@ -136,11 +136,11 @@ class SimpleMinsumMatcher(nn.Module):
                 len(index_i) = len(index_j) = min(num_queries, num_target_boxes)
         """
 
-        bs, num_queries = outputs["pred_logits"].shape[:2]
+        bs, num_queries = outputs["logit_all"].shape[:2]
 
         # We flatten to compute the cost matrices in a batch
-        out_prob = outputs["pred_logits"].flatten(0, 1).sigmoid()  # [batch_size * num_queries, num_classes]
-        out_bbox = outputs["pred_boxes"].flatten(0, 1)  # [batch_size * num_queries, 4]
+        out_prob = outputs["logit_all"].flatten(0, 1).sigmoid()  # [batch_size * num_queries, num_classes]
+        out_bbox = outputs["boxes_all"].flatten(0, 1)  # [batch_size * num_queries, 4]
 
         # Also concat the target labels and boxes
         tgt_ids = torch.cat([v["labels"] for v in targets])

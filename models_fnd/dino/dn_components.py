@@ -9,11 +9,11 @@
 
 
 import torch
-from util.misc import (NestedTensor, nested_tensor_from_tensor_list,
+from .misc import (NestedTensor, nested_tensor_from_tensor_list,
                        accuracy, get_world_size, interpolate,
                        is_dist_avail_and_initialized, inverse_sigmoid)
 # from .DABDETR import sigmoid_focal_loss
-from util import box_ops
+from . import box_ops
 import torch.nn.functional as F
 
 
@@ -147,7 +147,7 @@ def dn_post_process(outputs_class, outputs_coord, dn_meta, aux_loss, _set_aux_lo
         output_known_coord = outputs_coord[:, :, :dn_meta['pad_size'], :]
         outputs_class = outputs_class[:, :, dn_meta['pad_size']:, :]
         outputs_coord = outputs_coord[:, :, dn_meta['pad_size']:, :]
-        out = {'pred_logits': output_known_class[-1], 'pred_boxes': output_known_coord[-1]}
+        out = {'logit_all': output_known_class[-1], 'boxes_all': output_known_coord[-1]}
         if aux_loss:
             out['aux_outputs'] = _set_aux_loss(output_known_class, output_known_coord)
         dn_meta['output_known_lbs_bboxes'] = out

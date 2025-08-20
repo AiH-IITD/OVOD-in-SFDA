@@ -21,8 +21,8 @@ import torch.nn.functional as F
 from torch import nn
 from torchvision.ops.boxes import nms
 
-from util import box_ops
-from util.misc import (NestedTensor, nested_tensor_from_tensor_list,
+from . import box_ops
+from .misc import (NestedTensor, nested_tensor_from_tensor_list,
                        accuracy, get_world_size, interpolate,
                        is_dist_avail_and_initialized, inverse_sigmoid)
 
@@ -33,7 +33,7 @@ from .segmentation import (DETRsegm, PostProcessPanoptic, PostProcessSegm,
 from .deformable_transformer import build_deformable_transformer
 from .utils import sigmoid_focal_loss, MLP
 
-from ..registry import MODULE_BUILD_FUNCS
+# from ..registry import MODULE_BUILD_FUNCS
 from .dn_components import prepare_for_cdn,dn_post_process
 class DINO(nn.Module):
     """ This is the Cross-Attention Detector module that performs object detection """
@@ -221,23 +221,24 @@ class DINO(nn.Module):
         else:
             raise NotImplementedError('Unknown fix_refpoints_hw {}'.format(self.fix_refpoints_hw))
 
-    def forward(self, samples: NestedTensor, targets:List=None):
+    def forward(self, images, inputmasks, targets:List=None):
         """ The forward expects a NestedTensor, which consists of:
                - samples.tensor: batched images, of shape [batch_size x 3 x H x W]
                - samples.mask: a binary mask of shape [batch_size x H x W], containing 1 on padded pixels
 
             It returns a dict with the following elements:
-               - "pred_logits": the classification logits (including no-object) for all queries.
+               - "logit_all": the classification logits (including no-object) for all queries.
                                 Shape= [batch_size x num_queries x num_classes]
-               - "pred_boxes": The normalized boxes coordinates for all queries, represented as
+               - "boxes_all": The normalized boxes coordinates for all queries, represented as
                                (center_x, center_y, width, height). These values are normalized in [0, 1],
                                relative to the size of each individual image (disregarding possible padding).
                                See PostProcess for information on how to retrieve the unnormalized bounding box.
                - "aux_outputs": Optional, only returned when auxilary losses are activated. It is a list of
                                 dictionnaries containing the two above keys for each decoder layer.
         """
-        if isinstance(samples, (list, torch.Tensor)):
-            samples = nested_tensor_from_tensor_list(samples)
+        # if isinstance(samples, (list, torch.Tensor)):
+        #     samples = nested_tensor_from_tensor_list(samples)
+        samples = NestedTensor(images, inputmasks)
         features, poss = self.backbone(samples)
 
         srcs = []
@@ -293,7 +294,7 @@ class DINO(nn.Module):
             outputs_class, outputs_coord_list = \
                 dn_post_process(outputs_class, outputs_coord_list,
                                 dn_meta,self.aux_loss,self._set_aux_loss)
-        out = {'pred_logits': outputs_class[-1], 'pred_boxes': outputs_coord_list[-1]}
+        out = {'logit_all': outputs_class[-1], 'boxes_all': outputs_coord_list[-1]}
         if self.aux_loss:
             out['aux_outputs'] = self._set_aux_loss(outputs_class, outputs_coord_list)
 
@@ -303,8 +304,8 @@ class DINO(nn.Module):
             # prepare intermediate outputs
             interm_coord = ref_enc[-1]
             interm_class = self.transformer.enc_out_class_embed(hs_enc[-1])
-            out['interm_outputs'] = {'pred_logits': interm_class, 'pred_boxes': interm_coord}
-            out['interm_outputs_for_matching_pre'] = {'pred_logits': interm_class, 'pred_boxes': init_box_proposal}
+            out['interm_outputs'] = {'logit_all': interm_class, 'boxes_all': interm_coord}
+            out['interm_outputs_for_matching_pre'] = {'logit_all': interm_class, 'boxes_all': init_box_proposal}
 
             # prepare enc outputs
             # import ipdb; ipdb.set_trace()
@@ -325,7 +326,7 @@ class DINO(nn.Module):
                 # enc_outputs_coord = enc_outputs_unsig.sigmoid()
                 # enc_outputs_class = self.enc_class_embed(hs_enc[:-1])
                 out['enc_outputs'] = [
-                    {'pred_logits': a, 'pred_boxes': b} for a, b in zip(enc_outputs_class, enc_outputs_coord)
+                    {'logit_all': a, 'boxes_all': b} for a, b in zip(enc_outputs_class, enc_outputs_coord)
                 ]
 
         out['dn_meta'] = dn_meta
@@ -337,7 +338,7 @@ class DINO(nn.Module):
         # this is a workaround to make torchscript happy, as torchscript
         # doesn't support dictionary with non-homogeneous values, such
         # as a dict having both a Tensor and a list.
-        return [{'pred_logits': a, 'pred_boxes': b}
+        return [{'logit_all': a, 'boxes_all': b}
                 for a, b in zip(outputs_class[:-1], outputs_coord[:-1])]
 
 
@@ -367,8 +368,8 @@ class SetCriterion(nn.Module):
         """Classification loss (Binary focal loss)
         targets dicts must contain the key "labels" containing a tensor of dim [nb_target_boxes]
         """
-        assert 'pred_logits' in outputs
-        src_logits = outputs['pred_logits']
+        assert 'logit_all' in outputs
+        src_logits = outputs['logit_all']
 
         idx = self._get_src_permutation_idx(indices)
         target_classes_o = torch.cat([t["labels"][J] for t, (_, J) in zip(targets, indices)])
@@ -394,7 +395,7 @@ class SetCriterion(nn.Module):
         """ Compute the cardinality error, ie the absolute error in the number of predicted non-empty boxes
         This is not really a loss, it is intended for logging purposes only. It doesn't propagate gradients
         """
-        pred_logits = outputs['pred_logits']
+        pred_logits = outputs['logit_all']
         device = pred_logits.device
         tgt_lengths = torch.as_tensor([len(v["labels"]) for v in targets], device=device)
         # Count the number of predictions that are NOT "no-object" (which is the last class)
@@ -408,9 +409,9 @@ class SetCriterion(nn.Module):
            targets dicts must contain the key "boxes" containing a tensor of dim [nb_target_boxes, 4]
            The target boxes are expected in format (center_x, center_y, w, h), normalized by the image size.
         """
-        assert 'pred_boxes' in outputs
+        assert 'boxes_all' in outputs
         idx = self._get_src_permutation_idx(indices)
-        src_boxes = outputs['pred_boxes'][idx]
+        src_boxes = outputs['boxes_all'][idx]
         target_boxes = torch.cat([t['boxes'][i] for t, (_, i) in zip(targets, indices)], dim=0)
 
         loss_bbox = F.l1_loss(src_boxes, target_boxes, reduction='none')
@@ -640,8 +641,9 @@ class SetCriterion(nn.Module):
         if return_indices:
             indices_list.append(indices0_copy)
             return losses, indices_list
-
-        return losses
+        
+        losses_val = sum(losses[k] * self.weight_dict[k] for k in losses.keys() if k in self.weight_dict)
+        return losses_val, losses
 
     def prep_for_dn(self,dn_meta):
         output_known_lbs_bboxes = dn_meta['output_known_lbs_bboxes']
@@ -669,7 +671,7 @@ class PostProcess(nn.Module):
                           For visualization, this should be the image size after data augment, but before padding
         """
         num_select = self.num_select
-        out_logits, out_bbox = outputs['pred_logits'], outputs['pred_boxes']
+        out_logits, out_bbox = outputs['logit_all'], outputs['boxes_all']
 
         assert len(out_logits) == len(target_sizes)
         assert target_sizes.shape[1] == 2
@@ -703,7 +705,7 @@ class PostProcess(nn.Module):
 
         return results
 
-@MODULE_BUILD_FUNCS.registe_with_name(module_name='dino')
+# @MODULE_BUILD_FUNCS.registe_with_name(module_name='dino')
 def build_dino(args):
     # the `num_classes` naming here is somewhat misleading.
     # it indeed corresponds to `max_obj_id + 1`, where max_obj_id
@@ -774,6 +776,13 @@ def build_dino(args):
     )
     if args.masks:
         model = DETRsegm(model, freeze_detr=(args.frozen_weights is not None))
+
+    return model
+
+
+def build_dino_criterion(args):
+    num_classes = args.num_classes
+
     matcher = build_matcher(args)
 
     # prepare weight dict
@@ -824,12 +833,16 @@ def build_dino(args):
     criterion = SetCriterion(num_classes, matcher=matcher, weight_dict=weight_dict,
                              focal_alpha=args.focal_alpha, losses=losses,
                              )
-    criterion.to(device)
-    postprocessors = {'bbox': PostProcess(num_select=args.num_select, nms_iou_threshold=args.nms_iou_threshold)}
-    if args.masks:
-        postprocessors['segm'] = PostProcessSegm()
-        if args.dataset_file == "coco_panoptic":
-            is_thing_map = {i: i <= 90 for i in range(201)}
-            postprocessors["panoptic"] = PostProcessPanoptic(is_thing_map, threshold=0.85)
+    # postprocessors = {'bbox': PostProcess(num_select=args.num_select, nms_iou_threshold=args.nms_iou_threshold)}
+    # if args.masks:
+    #     postprocessors['segm'] = PostProcessSegm()
+    #     if args.dataset_file == "coco_panoptic":
+    #         is_thing_map = {i: i <= 90 for i in range(201)}
+    #         postprocessors["panoptic"] = PostProcessPanoptic(is_thing_map, threshold=0.85)
 
-    return model, criterion, postprocessors
+    return criterion
+
+
+def build_bbox_postprocessor_fnd(args):
+    postprocessors = {'bbox': PostProcess(num_select=args.num_select, nms_iou_threshold=args.nms_iou_threshold)}
+    return postprocessors
