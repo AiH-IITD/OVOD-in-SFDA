@@ -100,7 +100,7 @@ def get_args_parser(parser):
 
 
     # training parameters
-    parser.add_argument('--seed', default=42, type=int)
+    # parser.add_argument('--seed', default=42, type=int)
     parser.add_argument('--finetune_ignore', type=str, nargs='+')
     parser.add_argument('--test', action='store_true')
     parser.add_argument('--debug', action='store_true')

@@ -146,7 +146,11 @@ def build_optimizer(args, model):
         else:
             optimizer = torch.optim.AdamW(param_dicts, lr=args.lr, weight_decay=args.weight_decay)
     elif args.detector == 'fnd':
-        param_dicts = get_param_dict(args, model)
+        if args.distributed:
+            model_without_ddp = model.module
+        else:
+            model_without_ddp = model
+        param_dicts = get_param_dict(args, model_without_ddp)
         optimizer = torch.optim.AdamW(param_dicts, lr=args.lr,
                                   weight_decay=args.weight_decay)
     return optimizer
