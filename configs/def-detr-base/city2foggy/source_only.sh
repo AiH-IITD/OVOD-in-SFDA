@@ -1,9 +1,9 @@
 #!/bin/bash
-#PBS -N dru_bs2_fnd_cs_source
+#PBS -N dru_bs2_fnd_cs_source_same_hyperparam
 #PBS -l select=1:ncpus=4:ngpus=1
 #PBS -l walltime=72:0:00
-#PBS -o pbs_logs/fnd_cs_bs2_source_outputs.log
-#PBS -e pbs_logs/fnd_cs_bs2_source_errors.log
+#PBS -o pbs_logs/fnd_cs_bs2_source_same_hyperparam_outputs.log
+#PBS -e pbs_logs/fnd_cs_bs2_source_same_hyperparam_errors.log
 
 cd 
 source ~/scratch/setExport_sarvesh.sh
@@ -16,7 +16,7 @@ conda activate dru_double
 N_GPUS=1
 BATCH_SIZE=2
 DATA_ROOT=/home/s_shashi/scratch/Negroni_Dataset/Coco_Data/Natural
-OUTPUT_DIR=./outputs/def-detr-base/city2foggy/source_only_fnd
+OUTPUT_DIR=./outputs/def-detr-base/city2foggy/source_only_fnd_same_hyperparam
 
 CUDA_VISIBLE_DEVICES=3 OMP_NUM_THREADS=4 torchrun \
 --rdzv_endpoint localhost:26500 \
@@ -32,8 +32,8 @@ main.py \
 --target_dataset foggy_cityscapes \
 --batch_size ${BATCH_SIZE} \
 --eval_batch_size ${BATCH_SIZE} \
---lr 2e-4 \
---lr_backbone 2e-5 \
+--lr 0.0001 \
+--lr_backbone 1e-05 \
 --lr_linear_proj 2e-5 \
 --epoch 80 \
 --epoch_lr_drop 11 \
@@ -46,5 +46,6 @@ main.py \
 --hidden_dim 256 \
 --num_queries 900 \
 --num_feature_levels 4 \
+--random_seed 42 \
 --resume /home/s_shashi/scratch/Repos/FMA_PNP/DRU/pretrained_backbone/dino_focal_large_3level_4scale_36ep.pth \
---finetune_ignore label_enc.weight class_embed |& tee tee_logs/fnd_bs2_source_cs.txt
+--finetune_ignore label_enc.weight class_embed |& tee tee_logs/fnd_bs2_source_cs_same_hyperparam.txt
