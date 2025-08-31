@@ -17,7 +17,7 @@ from . import box_ops
 import torch.nn.functional as F
 
 
-def prepare_for_cdn(dn_args, training, num_queries, num_classes, hidden_dim, label_enc):
+def prepare_for_cdn(dn_args, training, num_queries, num_classes, hidden_dim, label_enc, dru_teacher=False):
     """
         A major difference of DINO from DN-DETR is that the author process pattern embedding pattern embedding in its detector
         forward function and use learnable tgt embedding, so we change this function a little bit.
@@ -29,7 +29,7 @@ def prepare_for_cdn(dn_args, training, num_queries, num_classes, hidden_dim, lab
         :param label_enc: encode labels in dn
         :return:
         """
-    if training:
+    if training and not dru_teacher:
         targets, dn_number, label_noise_ratio, box_noise_scale = dn_args
         # positive and negative dn queries
         dn_number = dn_number * 2
@@ -41,7 +41,7 @@ def prepare_for_cdn(dn_args, training, num_queries, num_classes, hidden_dim, lab
         else:
             if dn_number >= 100:
                 dn_number = dn_number // (int(max(known_num) * 2))
-            elif dn_number < 1:
+            elif dn_number < 1: 
                 dn_number = 1
         if dn_number == 0:
             dn_number = 1

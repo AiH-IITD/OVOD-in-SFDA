@@ -301,8 +301,11 @@ def teaching(model_stu, device):
 
         # Write the losses to tensorboard
         write_loss(epoch, 'teaching_target', loss_train, loss_target_dict)
-        lr_scheduler.step()
-
+        lr_scheduler.step()        # Evaluate
+        if args.detector == 'fnd':
+            postprocessors = build_bbox_postprocessor_fnd(args=args)
+        else:
+            postprocessors = None
         # Evaluate teacher and student model
         ap50_per_class_teacher, loss_val_teacher = evaluate(
             model=model_tch,
@@ -310,7 +313,8 @@ def teaching(model_stu, device):
             data_loader_val=val_loader,
             device=device,
             print_freq=args.print_freq,
-            flush=args.flush
+            flush=args.flush,
+            postprocessors=postprocessors
         )
         ap50_per_class_student, loss_val_student = evaluate(
             model=model_stu,
@@ -318,7 +322,8 @@ def teaching(model_stu, device):
             data_loader_val=val_loader,
             device=device,
             print_freq=args.print_freq,
-            flush=args.flush
+            flush=args.flush,
+            postprocessors=postprocessors
         )
         # Save the best checkpoint
         map50_tch = np.asarray([ap for ap in ap50_per_class_teacher if ap > -0.001]).mean().tolist()

@@ -33,7 +33,10 @@ def resume_and_load(model, ckpt_path, device, args=None):
     print("Loading checkpoints from", ckpt_path)
     checkpoints = torch.load(ckpt_path, map_location=device)
     if args is not None and args.detector == 'fnd':
-        checkpoints = resume_and_load_fnd(checkpoints['model'], args)
+        try:
+            checkpoints = resume_and_load_fnd(checkpoints['model'], args)
+        except KeyError as ke:
+            print(f"!!!!!!!!!!!!! Could not find key 'model' in checkpoint")
         missing_keys, unexpected_keys = model.load_state_dict(checkpoints, strict=False)
     elif 'model' in checkpoints.keys() and 'optimizer' in checkpoints.keys():
         checkpoints = convert_official_ckpt(checkpoints, model.state_dict())

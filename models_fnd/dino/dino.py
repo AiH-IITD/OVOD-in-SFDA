@@ -221,7 +221,7 @@ class DINO(nn.Module):
         else:
             raise NotImplementedError('Unknown fix_refpoints_hw {}'.format(self.fix_refpoints_hw))
 
-    def forward(self, images, inputmasks, targets:List=None):
+    def forward(self, images, inputmasks, targets:List=None, dru_teacher: bool = False):
         """ The forward expects a NestedTensor, which consists of:
                - samples.tensor: batched images, of shape [batch_size x 3 x H x W]
                - samples.mask: a binary mask of shape [batch_size x H x W], containing 1 on padded pixels
@@ -267,7 +267,7 @@ class DINO(nn.Module):
             input_query_label, input_query_bbox, attn_mask, dn_meta =\
                 prepare_for_cdn(dn_args=(targets, self.dn_number, self.dn_label_noise_ratio, self.dn_box_noise_scale),
                                 training=self.training,num_queries=self.num_queries,num_classes=self.num_classes,
-                                hidden_dim=self.hidden_dim,label_enc=self.label_enc)
+                                hidden_dim=self.hidden_dim,label_enc=self.label_enc, dru_teacher=dru_teacher)
         else:
             assert targets is None
             input_query_bbox = input_query_label = attn_mask = dn_meta = None

@@ -97,8 +97,8 @@ def build_model(args, device):
         for k,v in cfg_dict.items():
             if k not in args_vars:
                 setattr(args, k, v)
-            else:
-                raise ValueError("Key {} can used by args only".format(k))
+            # else:
+            #     raise ValueError("Key {} can used by args only".format(k))
         # update some new args temporally
         if not getattr(args, 'use_ema', None):
             args.use_ema = False

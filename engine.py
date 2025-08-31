@@ -113,11 +113,11 @@ def train_one_epoch_teaching_standard(student_model: torch.nn.Module,
     for iter in range(total_iters):
         # Target teacher forward
         with torch.no_grad():
-            teacher_out = teacher_model(target_teacher_images, target_masks)
-            pseudo_labels = get_pseudo_labels(teacher_out['logit_all'][-1], teacher_out['boxes_all'][-1], thresholds)
+            teacher_out = teacher_model(target_teacher_images, target_masks, dru_teacher=True)
+            pseudo_labels = get_pseudo_labels(teacher_out['logit_all'], teacher_out['boxes_all'], thresholds)
 
         # Target student forward
-        target_student_out = student_model(target_student_images, target_masks)
+        target_student_out = student_model(target_student_images, target_masks, pseudo_labels)
         target_loss, target_loss_dict = criterion_pseudo(target_student_out, pseudo_labels)
 
         loss = target_loss
