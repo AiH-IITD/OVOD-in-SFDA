@@ -14,6 +14,13 @@ from utils import get_rank, init_distributed_mode, resume_and_load, save_ckpt, s
 from utils.slconfig import DictAction, SLConfig
 from models_fnd.dino.dino import build_bbox_postprocessor_fnd
 
+# Grounding DINO imports
+from groundingdino.util.inference import load_model
+
+import os
+os.environ["TOKENIZERS_PARALLELISM"] = "False"
+
+
 def get_args_parser(parser):
     # Model Settings
     parser.add_argument('--backbone', default='resnet50', type=str)
@@ -109,6 +116,21 @@ def get_args_parser(parser):
 
     parser.add_argument('--save_results', action='store_true')
     parser.add_argument('--save_log', action='store_true')
+
+    parser.add_argument('--expert_model', default='groundingdino', type=str,
+                        help="'groundingdino' for using Grounding Dino as the expert,"
+                             "'medsam' for using MedSAM as the expert" )
+        
+    # Grounding DINO config and weights path settings
+    parser.add_argument('--grounding_dino_config', default='GroundingDINO/groundingdino/config/GroundingDINO_SwinT_OGC.py', type=str, help="Path to the Grounding DINO config file")
+    parser.add_argument('--grounding_dino_weights', default='GroundingDINO/weights/groundingdino_swint_ogc.pth', type=str, help="Path to the Grounding DINO weights")
+    
+    # Grounding DINO prompts and thresholds
+    parser.add_argument('--text_prompt', default='person . car . train . rider . truck . motorcycle . bicycle . bus .', type=str, help='A string with classes separated by spaces and dots.')
+    parser.add_argument('--label_classes', default='person,car,train,rider,truck,motorcycle,bicycle,bus', type=str, help='A list of all classes separated by commas(,). Only use spaces between words of the same class')
+    parser.add_argument('--text_threshold', default=0.25, type=float)
+    parser.add_argument('--box_threshold', default=0.35, type=float)
+
 
     # distributed training parameters
     # parser.add_argument('--world_size', default=1, type=int,
@@ -214,15 +236,25 @@ def teaching(model_stu, device):
     val_loader = build_dataloader(args, args.target_dataset, 'target', 'val', val_trans)
     idx_to_class = val_loader.dataset.coco.cats
     # Build teacher model
-    model_tch = build_teacher(args, model_stu, device)
+    if args.mode == "teaching_standard_double" or args.mode == "teaching_mask_double":
+        args_temp = copy.deepcopy(args)
+        args_temp.mode = "teaching_standard"
+        print("Setting teacher model to standard")
+        model_tch = build_model(args_temp, device)
+        if args.resume != "":
+            model_tch = resume_and_load(model_tch, args_temp.resume, device, args_temp)
+        else:
+            model_tch = build_teacher(args_temp, model_tch, device)
+    else:
+        model_tch = build_teacher(args, model_stu, device)
     # Build init student model
     init_model_stu = build_teacher(args, model_stu, device)
     # print(init_model_stu.keys())
     # Prepare model for optimization
     if args.distributed:
-        model_stu = DistributedDataParallel(model_stu, device_ids=[args.gpu], find_unused_parameters=False)
-        model_tch = DistributedDataParallel(model_tch, device_ids=[args.gpu])
-        init_model_stu = DistributedDataParallel(init_model_stu, device_ids=[args.gpu])
+        model_stu = DistributedDataParallel(model_stu, device_ids=[args.gpu], find_unused_parameters=False, static_graph=True)
+        model_tch = DistributedDataParallel(model_tch, device_ids=[args.gpu], static_graph=True)
+        init_model_stu = DistributedDataParallel(init_model_stu, device_ids=[args.gpu], static_graph=True)
     # Build criterion, optimizer and lr_scheduler
     criterion = build_criterion(args, device)
     criterion_pseudo = build_criterion(args, device)
@@ -242,6 +274,11 @@ def teaching(model_stu, device):
 
     # Initialize masking
     masking = Masking(block_size=args.block_size, masked_ratio=args.masked_ratio)
+
+    if args.mode == "teaching_standard_double" or args.mode == "teaching_mask_double":
+
+        expert_model = load_model(args.grounding_dino_config, args.grounding_dino_weights)
+        expert_detector = None
 
     for epoch in range(args.epoch):
         # Set the epoch for the sampler
@@ -291,6 +328,42 @@ def teaching(model_stu, device):
                 print_freq=args.print_freq,
                 flush=args.flush,
                 fix_update_iter=args.fix_update_iter,
+            )
+        elif args.mode == "teaching_mask_double":
+            loss_train, loss_target_dict = train_one_epoch_teaching_mask_double(
+                student_model=model_stu,
+                teacher_model=model_tch,
+                init_student_model=init_model_stu,
+                expert_model=expert_model,
+                criterion_pseudo=criterion_pseudo,
+                criterion_pseudo_weak=criterion_pseudo_weak,
+                target_loader=target_loader,
+                optimizer=optimizer,
+                thresholds=thresholds,
+                coef_masked_img=args.coef_masked_img,
+                alpha_ema=args.alpha_ema,
+                device=device,
+                epoch=epoch,
+                keep_modules=args.keep_modules,
+                clip_max_norm=args.clip_max_norm,
+                print_freq=args.print_freq,
+                masking=masking,
+                flush=args.flush,
+                fix_update_iter=args.fix_update_iter,
+                max_update_iter=args.max_update_iter,
+                dynamic_update=args.dynamic_update,
+                stu_buffer_cost=stu_buffer_cost,
+                stu_buffer_img=stu_buffer_img,
+                stu_buffer_mask=stu_buffer_mask,
+                res_dict=res_dict,
+                use_pseudo_label_weights=args.use_pseudo_label_weights,
+                use_loss_student=args.use_loss_student,
+                text_prompt=args.text_prompt,
+                box_threshold=args.box_threshold,
+                text_threshold=args.text_threshold,
+                label_classes=args.label_classes.split(','),
+                expert_detector=expert_detector,
+                expert_model_type=args.expert_model
             )
         else:
             raise ValueError('Invalid mode: ' + args.mode)
@@ -393,7 +466,7 @@ def main():
     print('-------------------------------------', flush=args.flush)
     if args.mode == "single_domain":
         single_domain_training(model, device)
-    elif args.mode == "teaching_standard" or args.mode == "teaching_mask":
+    elif args.mode == "teaching_standard" or args.mode == "teaching_mask" or args.mode == "teaching_mask_double":
         teaching(model, device)
     elif args.mode == "eval":
         eval_only(model, device)

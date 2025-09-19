@@ -8,7 +8,11 @@ def clean_state_dict(state_dict):
     for k, v in state_dict.items():
         if k[:7] == 'module.':
             k = k[7:]  # remove `module.`
-        new_state_dict[k] = v
+        if "_expert" in k:
+            print(f"EXPERT BRANCH: {k}")
+            new_state_dict[k] = state_dict[k.replace("_expert", "")]
+        else:
+            new_state_dict[k] = v
     return new_state_dict
 
 def resume_and_load_fnd(checkpoint, args):
@@ -38,6 +42,10 @@ def resume_and_load(model, ckpt_path, device, args=None):
         except KeyError as ke:
             print(f"!!!!!!!!!!!!! Could not find key 'model' in checkpoint")
         missing_keys, unexpected_keys = model.load_state_dict(checkpoints, strict=False)
+        if "bbox_embed_expert.0.layers.0.weight" in missing_keys and "class_embed_expert.0.weight" in missing_keys:
+            for missing_key in missing_keys:
+                checkpoints[missing_key] = checkpoints[missing_key.replace("_expert", "")]
+            missing_keys, unexpected_keys = model.load_state_dict(checkpoints, strict=True)
     elif 'model' in checkpoints.keys() and 'optimizer' in checkpoints.keys():
         checkpoints = convert_official_ckpt(checkpoints, model.state_dict())
         missing_keys, unexpected_keys = model.load_state_dict(checkpoints)
