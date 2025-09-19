@@ -31,7 +31,7 @@ from .matcher import build_matcher
 from .segmentation import (DETRsegm, PostProcessPanoptic, PostProcessSegm,
                            dice_loss)
 from .deformable_transformer import build_deformable_transformer
-from .utils import sigmoid_focal_loss, MLP
+from .utils import sigmoid_focal_loss, sigmoid_quality_focal_loss, MLP
 
 # from ..registry import MODULE_BUILD_FUNCS
 from .dn_components import prepare_for_cdn,dn_post_process
@@ -364,7 +364,7 @@ class SetCriterion(nn.Module):
         self.losses = losses
         self.focal_alpha = focal_alpha
 
-    def loss_labels(self, outputs, targets, indices, num_boxes, log=True):
+    def loss_labels(self, outputs, targets, indices, num_boxes, use_pseudo_label_weights=False, log=True):
         """Classification loss (Binary focal loss)
         targets dicts must contain the key "labels" containing a tensor of dim [nb_target_boxes]
         """
@@ -382,7 +382,15 @@ class SetCriterion(nn.Module):
         target_classes_onehot.scatter_(2, target_classes.unsqueeze(-1), 1)
 
         target_classes_onehot = target_classes_onehot[:,:,:-1]
-        loss_ce = sigmoid_focal_loss(src_logits, target_classes_onehot, num_boxes, alpha=self.focal_alpha, gamma=2) * src_logits.shape[1]
+
+        if use_pseudo_label_weights:
+            gt_scores_o = torch.cat([t["scores"][J] for t, (_, J) in zip(targets, indices)])
+            gt_scores = torch.full(src_logits.shape[:2], 0.0, dtype=torch.float, device=src_logits.device)
+            gt_scores[idx] = gt_scores_o
+            gt_scores_weight = target_classes_onehot * gt_scores.unsqueeze(-1)
+            loss_ce = sigmoid_quality_focal_loss(src_logits, target_classes_onehot, gt_scores_weight, num_boxes, alpha=self.focal_alpha, gamma=2) * src_logits.shape[1]
+        else:
+            loss_ce = sigmoid_focal_loss(src_logits, target_classes_onehot, num_boxes, alpha=self.focal_alpha, gamma=2) * src_logits.shape[1]
         losses = {'loss_ce': loss_ce}
 
         if log:
@@ -391,7 +399,7 @@ class SetCriterion(nn.Module):
         return losses
 
     @torch.no_grad()
-    def loss_cardinality(self, outputs, targets, indices, num_boxes):
+    def loss_cardinality(self, outputs, targets, indices, num_boxes, use_pseudo_label_weights):
         """ Compute the cardinality error, ie the absolute error in the number of predicted non-empty boxes
         This is not really a loss, it is intended for logging purposes only. It doesn't propagate gradients
         """
@@ -404,7 +412,7 @@ class SetCriterion(nn.Module):
         losses = {'cardinality_error': card_err}
         return losses
 
-    def loss_boxes(self, outputs, targets, indices, num_boxes):
+    def loss_boxes(self, outputs, targets, indices, num_boxes, use_pseudo_label_weights):
         """Compute the losses related to the bounding boxes, the L1 regression loss and the GIoU loss
            targets dicts must contain the key "boxes" containing a tensor of dim [nb_target_boxes, 4]
            The target boxes are expected in format (center_x, center_y, w, h), normalized by the image size.
@@ -414,14 +422,25 @@ class SetCriterion(nn.Module):
         src_boxes = outputs['boxes_all'][idx]
         target_boxes = torch.cat([t['boxes'][i] for t, (_, i) in zip(targets, indices)], dim=0)
 
-        loss_bbox = F.l1_loss(src_boxes, target_boxes, reduction='none')
+        if use_pseudo_label_weights:
+            gt_weights = torch.cat([anno['scores'][i] for anno, (_, i) in zip(targets, indices)], dim=0)
+            loss_bbox = F.l1_loss(src_boxes, target_boxes, reduction='none') * gt_weights.unsqueeze(-1)
+        else:
+            loss_bbox = F.l1_loss(src_boxes, target_boxes, reduction='none')
 
         losses = {}
         losses['loss_bbox'] = loss_bbox.sum() / num_boxes
 
-        loss_giou = 1 - torch.diag(box_ops.generalized_box_iou(
-            box_ops.box_cxcywh_to_xyxy(src_boxes),
-            box_ops.box_cxcywh_to_xyxy(target_boxes)))
+        if use_pseudo_label_weights:
+            gt_weights = torch.cat([anno['scores'][i] for anno, (_, i) in zip(targets, indices)], dim=0)
+            loss_giou = 1 - torch.diag(box_ops.generalized_box_iou(
+                box_ops.box_cxcywh_to_xyxy(src_boxes),
+                box_ops.box_cxcywh_to_xyxy(target_boxes)))
+            loss_giou = loss_giou * gt_weights
+        else:
+            loss_giou = 1 - torch.diag(box_ops.generalized_box_iou(
+                box_ops.box_cxcywh_to_xyxy(src_boxes),
+                box_ops.box_cxcywh_to_xyxy(target_boxes)))
         losses['loss_giou'] = loss_giou.sum() / num_boxes
 
         # calculate the x,y and h,w loss
@@ -432,7 +451,7 @@ class SetCriterion(nn.Module):
 
         return losses
 
-    def loss_masks(self, outputs, targets, indices, num_boxes):
+    def loss_masks(self, outputs, targets, indices, num_boxes, use_pseudo_label_weights):
         """Compute the losses related to the masks: the focal loss and the dice loss.
            targets dicts must contain the key "masks" containing a tensor of dim [nb_target_boxes, h, w]
         """
@@ -473,7 +492,7 @@ class SetCriterion(nn.Module):
         tgt_idx = torch.cat([tgt for (_, tgt) in indices])
         return batch_idx, tgt_idx
 
-    def get_loss(self, loss, outputs, targets, indices, num_boxes, **kwargs):
+    def get_loss(self, loss, outputs, targets, indices, num_boxes, use_pseudo_label_weights, **kwargs):
         loss_map = {
             'labels': self.loss_labels,
             'cardinality': self.loss_cardinality,
@@ -483,9 +502,9 @@ class SetCriterion(nn.Module):
             # 'dn_boxes': self.loss_dn_boxes
         }
         assert loss in loss_map, f'do you really want to compute {loss} loss?'
-        return loss_map[loss](outputs, targets, indices, num_boxes, **kwargs)
+        return loss_map[loss](outputs, targets, indices, num_boxes, use_pseudo_label_weights, **kwargs)
 
-    def forward(self, outputs, targets, return_indices=False):
+    def forward(self, outputs, targets, return_indices=False, use_pseudo_label_weights=False):
         """ This performs the loss computation.
         Parameters:
              outputs: dict of tensors, see the output specification of the model for the format
@@ -541,7 +560,7 @@ class SetCriterion(nn.Module):
                 kwargs = {}
                 if 'labels' in loss:
                     kwargs = {'log': False}
-                l_dict.update(self.get_loss(loss, output_known_lbs_bboxes, targets, dn_pos_idx, num_boxes*scalar,**kwargs))
+                l_dict.update(self.get_loss(loss, output_known_lbs_bboxes, targets, dn_pos_idx, num_boxes*scalar, use_pseudo_label_weights, **kwargs))
 
             l_dict = {k + f'_dn': v for k, v in l_dict.items()}
             losses.update(l_dict)
@@ -557,7 +576,7 @@ class SetCriterion(nn.Module):
 
 
         for loss in self.losses:
-            losses.update(self.get_loss(loss, outputs, targets, indices, num_boxes))
+            losses.update(self.get_loss(loss, outputs, targets, indices, num_boxes, use_pseudo_label_weights))
 
         # In case of auxiliary losses, we repeat this process with the output of each intermediate layer.
         if 'aux_outputs' in outputs:
@@ -573,7 +592,7 @@ class SetCriterion(nn.Module):
                     if loss == 'labels':
                         # Logging is enabled only for the last layer
                         kwargs = {'log': False}
-                    l_dict = self.get_loss(loss, aux_outputs, targets, indices, num_boxes, **kwargs)
+                    l_dict = self.get_loss(loss, aux_outputs, targets, indices, num_boxes, use_pseudo_label_weights, **kwargs)
                     l_dict = {k + f'_{idx}': v for k, v in l_dict.items()}
                     losses.update(l_dict)
 
@@ -585,7 +604,7 @@ class SetCriterion(nn.Module):
                         if 'labels' in loss:
                             kwargs = {'log': False}
 
-                        l_dict.update(self.get_loss(loss, aux_outputs_known, targets, dn_pos_idx, num_boxes*scalar,
+                        l_dict.update(self.get_loss(loss, aux_outputs_known, targets, dn_pos_idx, num_boxes*scalar, use_pseudo_label_weights,
                                                                  **kwargs))
 
                     l_dict = {k + f'_dn_{idx}': v for k, v in l_dict.items()}
@@ -616,7 +635,7 @@ class SetCriterion(nn.Module):
                 if loss == 'labels':
                     # Logging is enabled only for the last layer
                     kwargs = {'log': False}
-                l_dict = self.get_loss(loss, interm_outputs, targets, indices, num_boxes, **kwargs)
+                l_dict = self.get_loss(loss, interm_outputs, targets, indices, num_boxes, use_pseudo_label_weights, **kwargs)
                 l_dict = {k + f'_interm': v for k, v in l_dict.items()}
                 losses.update(l_dict)
 
@@ -634,7 +653,7 @@ class SetCriterion(nn.Module):
                     if loss == 'labels':
                         # Logging is enabled only for the last layer
                         kwargs = {'log': False}
-                    l_dict = self.get_loss(loss, enc_outputs, targets, indices, num_boxes, **kwargs)
+                    l_dict = self.get_loss(loss, enc_outputs, targets, indices, num_boxes, use_pseudo_label_weights, **kwargs)
                     l_dict = {k + f'_enc_{i}': v for k, v in l_dict.items()}
                     losses.update(l_dict)
 
@@ -780,22 +799,22 @@ def build_dino(args):
     return model
 
 
-def build_dino_criterion(args):
+def build_dino_criterion(args, only_class_loss=False):
     num_classes = args.num_classes
 
     matcher = build_matcher(args)
 
     # prepare weight dict
-    weight_dict = {'loss_ce': args.cls_loss_coef, 'loss_bbox': args.bbox_loss_coef}
-    weight_dict['loss_giou'] = args.giou_loss_coef
+    weight_dict = {'loss_ce': args.cls_loss_coef, 'loss_bbox': 0.0 if only_class_loss else args.bbox_loss_coef}
+    weight_dict['loss_giou'] = 0.0 if only_class_loss else args.giou_loss_coef
     clean_weight_dict_wo_dn = copy.deepcopy(weight_dict)
 
     
     # for DN training
     if args.use_dn:
         weight_dict['loss_ce_dn'] = args.cls_loss_coef
-        weight_dict['loss_bbox_dn'] = args.bbox_loss_coef
-        weight_dict['loss_giou_dn'] = args.giou_loss_coef
+        weight_dict['loss_bbox_dn'] = 0.0 if only_class_loss else args.bbox_loss_coef
+        weight_dict['loss_giou_dn'] = 0.0 if only_class_loss else args.giou_loss_coef
 
     if args.masks:
         weight_dict["loss_mask"] = args.mask_loss_coef

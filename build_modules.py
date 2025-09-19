@@ -123,7 +123,7 @@ def build_criterion(args, device, only_class_loss=False, high_quality_matches=Fa
             device=device
         )
     elif args.detector == 'fnd':
-        criterion = build_dino_criterion(args)
+        criterion = build_dino_criterion(args, only_class_loss=only_class_loss)
     criterion.to(device)
     return criterion
 

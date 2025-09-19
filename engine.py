@@ -212,17 +212,17 @@ def train_one_epoch_teaching_mask(student_model: torch.nn.Module,
     for iter in range(total_iters):
         # Target teacher forward
         with torch.no_grad():
-            teacher_out = teacher_model(target_teacher_images, target_masks)
-            pseudo_labels = get_pseudo_labels(teacher_out['logit_all'][-1], teacher_out['boxes_all'][-1], thresholds)
+            teacher_out = teacher_model(target_teacher_images, target_masks, dru_teacher=True)
+            pseudo_labels = get_pseudo_labels(teacher_out['logit_all'], teacher_out['boxes_all'], thresholds)
 
         # Target student forward
-        target_student_out = student_model(target_student_images, target_masks)
+        target_student_out = student_model(target_student_images, target_masks, pseudo_labels)
         # loss from pseudo labels of current teacher
         target_loss, target_loss_dict = criterion_pseudo(target_student_out, pseudo_labels)
 
         # Masked target student forward
         masked_target_images = masking(target_student_images)
-        masked_target_student_out = student_model(masked_target_images, target_masks)
+        masked_target_student_out = student_model(masked_target_images, target_masks, pseudo_labels)
         # loss from pseudo labels of current teacher
         masked_target_loss, masked_target_loss_dict = criterion_pseudo(masked_target_student_out, pseudo_labels)
 
@@ -248,7 +248,7 @@ def train_one_epoch_teaching_mask(student_model: torch.nn.Module,
         # Dynamic update EMA teacher : Create buffer cost and buffer image in student model
         if dynamic_update:
             with torch.no_grad():
-                student_out = student_model(target_teacher_images, target_masks)
+                student_out = student_model(target_teacher_images, target_masks, dru_teacher=True)
             # variance logit
             student_out_var = student_out['logit_all'].var(dim=0)
             var_total = student_out_var.mean().item()
@@ -264,14 +264,14 @@ def train_one_epoch_teaching_mask(student_model: torch.nn.Module,
 
             if len(stu_buffer_cost) >= 1:
                 with torch.no_grad():
-                    init_student_out = init_student_model(target_teacher_images, target_masks)
-                    pseudo_labels_init_student = get_pseudo_labels(init_student_out['logit_all'][-1], init_student_out['boxes_all'][-1],
+                    init_student_out = init_student_model(target_teacher_images, target_masks, dru_teacher=True)
+                    pseudo_labels_init_student = get_pseudo_labels(init_student_out['logit_all'], init_student_out['boxes_all'],
                                                               thresholds)
                 # Loss from pseudo labels of init student
                 init_student_loss, init_student_loss_dict = criterion_pseudo_weak(target_student_out,
-                                                                                    pseudo_labels_init_student, use_pseudo_label_weights)
+                                                                                    pseudo_labels_init_student, use_pseudo_label_weights=use_pseudo_label_weights)
                 masked_init_student_loss, masked_init_student_loss_dict = criterion_pseudo_weak(masked_target_student_out,
-                                                                                                  pseudo_labels_init_student, use_pseudo_label_weights)
+                                                                                                  pseudo_labels_init_student, use_pseudo_label_weights=use_pseudo_label_weights)
                 loss_init_student = init_student_loss + coef_masked_img * masked_init_student_loss
                 loss += loss_init_student
 
