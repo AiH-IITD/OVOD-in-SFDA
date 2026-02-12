@@ -26,6 +26,10 @@ from utils import selective_reinitialize
 
 from groundingdino.util.inference import predict
 import math
+import os
+from PIL import ImageDraw, ImageFont
+from PIL import Image
+
 
 class ModelNotFoundError(Exception):
     pass
@@ -428,9 +432,9 @@ def train_one_epoch_teaching_mask_double(student_model: torch.nn.Module,
     """
     # T0 = 10 #Start intrducing L_exp from this epoch
     # T = 60 #Total epochs of training
-    T0 = 0 #Start intrducing L_exp from this epoch
-    T = 14 #Total epochs of training
-    warmup_scheduler = CosineWarmup(T0, T)
+    # T0 = 0 #Start intrducing L_exp from this epoch
+    # T = 14 #Total epochs of training
+    # warmup_scheduler = CosineWarmup(T0, T)
     start_time = time.time()
     student_model.train()
     teacher_model.train()
@@ -484,8 +488,18 @@ def train_one_epoch_teaching_mask_double(student_model: torch.nn.Module,
         target_student_out1, target_student_out2 = student_model(target_student_images, target_masks, pseudo_labels)
         # loss from pseudo labels of current teacher
         target_loss, target_loss_dict = criterion_pseudo(target_student_out1, pseudo_labels)
-        target_loss_expert, target_loss_dict_expert = criterion_pseudo(target_student_out2, expert_labels)
-
+        try:
+            target_loss_expert, target_loss_dict_expert = criterion_pseudo(target_student_out2, expert_labels)
+        except Exception as e:
+            print("ERROR IN CRITERION!!!!")
+            print(e)
+            print("STUDENT OUT:")
+            print(target_student_out2)
+            print("*"*20)
+            print("GDINO OUT:")
+            print(expert_labels)
+            raise RuntimeError
+            
         # Masked target student forward
         masked_target_images = masking(target_student_images)
         masked_target_student_out1, masked_target_student_out2 = student_model(masked_target_images, target_masks, pseudo_labels)
@@ -494,14 +508,19 @@ def train_one_epoch_teaching_mask_double(student_model: torch.nn.Module,
         masked_target_loss_expert, masked_target_loss_dict_expert = criterion_pseudo(masked_target_student_out2, expert_labels)
 
         # Final loss
-        if epoch < 15 :
-            lambda_exp = warmup_scheduler.get_lambda(epoch)
+        if epoch < 25 :
+            lambda_exp = 1
         else:
             lambda_exp = 1
+        lambda_csod = 1
+        lambda_hist = 1
         if iter == 0:
-            print(f"Annealing as follows (Lambda_exp) for epoch {epoch}: {lambda_exp}")
-        target_loss_combined = target_loss + lambda_exp * target_loss_expert #Annealing for the Expert Loss
-        masked_target_loss_combined = masked_target_loss + lambda_exp * masked_target_loss_expert #Annealing for the Expert Loss
+            # print(f"Annealing as follows (Lambda_exp) for epoch {epoch}: {lambda_exp}")
+            print("Lambda CSOD: ", lambda_csod)
+            print("Lambda HIST: ", lambda_hist)
+            print("Lambda EXP: ", lambda_exp)
+        target_loss_combined = lambda_csod * target_loss + lambda_exp * target_loss_expert #Annealing for the Expert Loss
+        masked_target_loss_combined = lambda_csod * masked_target_loss + lambda_exp * masked_target_loss_expert #Annealing for the Expert Loss
         loss = target_loss_combined + coef_masked_img * masked_target_loss_combined
 
         # Loss from pseudo labels of previous student (just testing, not used)
@@ -559,7 +578,7 @@ def train_one_epoch_teaching_mask_double(student_model: torch.nn.Module,
                 init_student_loss = init_student_loss1 + init_student_loss2
                 masked_init_student_loss = masked_init_student_loss1 + masked_init_student_loss2
                 loss_init_student = init_student_loss + coef_masked_img * masked_init_student_loss
-                loss += loss_init_student
+                loss += lambda_hist * loss_init_student
 
         # Backward
         optimizer.zero_grad()
@@ -628,9 +647,6 @@ def train_one_epoch_teaching_mask_double(student_model: torch.nn.Module,
             print('Teaching epoch ' + str(epoch) + ' : [ ' + str(iter + 1) + '/' + str(total_iters) + ' ] ' +
                   'total loss: ' + str(loss.detach().cpu().numpy()), flush=flush)
 
-        if iter > 100:
-            break
-
     # Final process of loss dict
     epoch_loss /= total_iters
     for k, v in epoch_target_loss_dict.items():
@@ -674,8 +690,8 @@ def evaluate(model: torch.nn.Module,
             out = model(images, masks)
         logit_all, boxes_all = out['logit_all'], out['boxes_all']
         # Get pseudo labels
-        if output_result_labels:
-            results = get_pseudo_labels(logit_all[-1], boxes_all[-1], [0.4 for _ in range(9)])
+        if not output_result_labels:
+            results = get_pseudo_labels(logit_all, boxes_all, [0.4 for _ in range(9)])
             for anno, res in zip(annotations, results):
                 image_id = anno['image_id'].item()
                 orig_image_size = anno['orig_size']
@@ -772,3 +788,120 @@ def eval_stu_double(student_model: torch.nn.Module,
             all_score.append(var_total)
 
     return all_score
+
+
+def renorm(img: torch.FloatTensor, mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]) \
+        -> torch.FloatTensor:
+    # img: tensor(3,H,W) or tensor(B,3,H,W)
+    # return: same as img
+    assert img.dim() == 3 or img.dim() == 4, "img.dim() should be 3 or 4 but %d" % img.dim() 
+    if img.dim() == 3:
+        assert img.size(0) == 3, 'img.size(0) shoule be 3 but "%d". (%s)' % (img.size(0), str(img.size()))
+        img_perm = img.permute(1,2,0)
+        mean = torch.Tensor(mean)
+        std = torch.Tensor(std)
+        img_res = img_perm * std + mean
+        return img_res.permute(2,0,1)
+    else: # img.dim() == 4
+        assert img.size(1) == 3, 'img.size(1) shoule be 3 but "%d". (%s)' % (img.size(1), str(img.size()))
+        img_perm = img.permute(0,2,3,1)
+        mean = torch.Tensor(mean)
+        std = torch.Tensor(std)
+        img_res = img_perm * std + mean
+        return img_res.permute(0,3,1,2)
+    
+
+@torch.no_grad()
+def visualize(model: torch.nn.Module,
+             criterion: torch.nn.Module,
+             data_loader_val: DataLoader,
+             device: torch.device,
+             print_freq: int,
+             output_result_labels: bool = False,
+             flush: bool = False,
+             postprocessors: dict = None,):
+    start_time = time.time()
+    model.eval()
+    criterion.eval()
+
+    colors = {
+                "2": (0, 0, 255),    # Blue
+                "1": (0, 255, 0),    # Green
+                "9": (255, 0, 0),    # Red
+                "5": (255, 255, 0),  # Yellow
+                "4": (255, 0, 255),  # Magenta
+                "7": (0, 255, 255),  # Cyan
+                "6": (128, 0, 128),  # Purple
+                "8": (255, 165, 0),  # Orange
+                "3": (128, 128, 128) # Gray
+    }
+    # font = ImageFont.load_default()
+    font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 24)
+
+    if hasattr(data_loader_val.dataset, 'coco') or hasattr(data_loader_val.dataset, 'anno_file'):
+        coco_data = json.load(open(data_loader_val.dataset.anno_file, 'r'))
+        # dataset_annotations = [[] for _ in range(len(coco_data['images']))]
+        dataset_annotations = defaultdict(list)
+    else:
+        raise ValueError('Unsupported dataset type.')
+
+    for i, (images, masks, annotations) in enumerate(data_loader_val):
+        # To CUDA
+        images = images.to(device)
+        masks = masks.to(device)
+        # Forward
+        out = model(images, masks)
+        # logit_all, boxes_all = out['logit_all'], out['boxes_all']
+        outputs = postprocessors['bbox'](out, torch.Tensor([[1.0, 1.0]]).cuda())[0]
+        image_id = annotations[0]['image_id'].item()
+        file_name = next(
+                            img["file_name"]
+                            for img in coco_data["images"]
+                            if img["id"] == image_id
+                        )
+        image_ = Image.open(os.path.join(data_loader_val.dataset.image_root, file_name)).convert("RGB")
+        draw = ImageDraw.Draw(image_, "RGBA")
+        orig_image_size = annotations[0]['orig_size']
+        img_h, img_w = orig_image_size.unbind(0)
+        # outputs = post_process(logit_all[-1], boxes_all[-1], orig_image_size, 100)
+        # img_w, img_h = image_.size
+        scale_fct = torch.stack([torch.tensor(img_w, device="cuda"), torch.tensor(img_h, device="cuda"), torch.tensor(img_w, device="cuda"), torch.tensor(img_h, device="cuda")])
+
+        for idx, output in enumerate(outputs):
+            converted_boxes = outputs['boxes'] * scale_fct
+            converted_boxes = converted_boxes.detach().cpu().numpy().tolist()
+            for label, box, score in zip(outputs['labels'].detach().cpu().numpy().tolist(), converted_boxes, outputs['scores'].detach().cpu().numpy().tolist()):
+                if score < 0.3:
+                    continue
+                x1, y1, x2, y2 = box  
+                draw.rectangle([x1, y1, x2, y2], outline=colors[str(label)], width=6)
+                # ----- Add text above the box -----
+                # if label == 2:
+                #     print(label)
+                #     continue
+                text = coco_data["categories"][label - 1]["name"]
+                print(text)
+
+                # Compute text size (Pillow <10 style)
+                text_width, text_height = draw.textsize(text, font=font)
+
+                # Text position (slightly above y1)
+                text_x = x1
+                text_y = y1 - text_height - 4  # 4px padding
+
+                # # Optional background for readability
+                # draw.rectangle(
+                #     [text_x, text_y, text_x + text_width, text_y + text_height],
+                #     fill=color
+                # )
+
+                # Draw the text
+                draw.text((text_x, text_y), text, fill=colors[str(label)], font=font)
+
+        batch = image_id // 16
+        num = image_id % 16
+
+        if batch > 6:
+            break
+
+        image_.save(f"city2bdd/{batch}_{num}_fnd_double.png")

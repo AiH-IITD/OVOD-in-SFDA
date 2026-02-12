@@ -93,7 +93,7 @@ def get_args_parser(parser):
     parser.add_argument('--flush', default=True, type=bool)
     parser.add_argument("--resume", default="", type=str)
     # FND Custom arguments
-    parser.add_argument('--config_file', '-c', type=str, required=True)
+    parser.add_argument('--config_file', '-c', type=str, required=False)
     parser.add_argument('--options',
         nargs='+',
         action=DictAction,
@@ -427,20 +427,38 @@ def eval_only(model, device):
     criterion = build_criterion(args, device)
     # Eval source or target dataset
     val_loader = build_dataloader(args, args.target_dataset, 'target', 'val', val_trans)
-    ap50_per_class, epoch_loss_val, coco_data = evaluate(
-        model=model,
-        criterion=criterion,
-        data_loader_val=val_loader,
-        output_result_labels=True,
-        device=device,
-        print_freq=args.print_freq,
-        flush=args.flush
-    )
-    print('Evaluation finished. mAPs: ' + str(ap50_per_class) + '. Evaluation loss: ' + str(epoch_loss_val))
-    output_file = output_dir/'evaluation_result_labels.json'
-    print("Writing evaluation result labels to " + str(output_file))
-    with open(output_file, 'w', encoding='utf-8') as fp:
-        json.dump(coco_data, fp)
+    if args.detector == 'fnd':
+        postprocessors = build_bbox_postprocessor_fnd(args=args)
+    else:
+        postprocessors = None
+
+    if args.mode == "eval":
+        ap50_per_class, epoch_loss_val, coco_data = evaluate(
+            model=model,
+            criterion=criterion,
+            data_loader_val=val_loader,
+            output_result_labels=True,
+            device=device,
+            print_freq=args.print_freq,
+            flush=args.flush,
+            postprocessors=postprocessors
+        )
+        print('Evaluation finished. mAPs: ' + str(ap50_per_class) + '. Evaluation loss: ' + str(epoch_loss_val))
+        output_file = output_dir/'evaluation_result_labels.json'
+        print("Writing evaluation result labels to " + str(output_file))
+        with open(output_file, 'w', encoding='utf-8') as fp:
+            json.dump(coco_data, fp)
+    elif args.mode == "visualize":
+        visualize(
+            model=model,
+            criterion=criterion,
+            data_loader_val=val_loader,
+            output_result_labels=True,
+            device=device,
+            print_freq=args.print_freq,
+            flush=args.flush,
+            postprocessors=postprocessors
+        )
 
 
 def main():
@@ -468,7 +486,7 @@ def main():
         single_domain_training(model, device)
     elif args.mode == "teaching_standard" or args.mode == "teaching_mask" or args.mode == "teaching_mask_double":
         teaching(model, device)
-    elif args.mode == "eval":
+    elif args.mode == "eval" or args.mode == "visualize":
         eval_only(model, device)
     else:
         raise ValueError('Invalid mode: ' + args.mode)
