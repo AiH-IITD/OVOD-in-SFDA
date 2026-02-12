@@ -49,6 +49,8 @@ def resume_and_load(model, ckpt_path, device, args=None):
     elif 'model' in checkpoints.keys() and 'optimizer' in checkpoints.keys():
         checkpoints = convert_official_ckpt(checkpoints, model.state_dict())
         missing_keys, unexpected_keys = model.load_state_dict(checkpoints)
+    else:
+        missing_keys, unexpected_keys = model.load_state_dict(checkpoints)
     print("Missing keys:", missing_keys)
     print("Unexpected keys:", unexpected_keys)
     return model
