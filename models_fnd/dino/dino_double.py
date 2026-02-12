@@ -143,8 +143,10 @@ class DINODouble(nn.Module):
             class_embed_layerlist = [copy.deepcopy(_class_embed) for i in range(transformer.num_decoder_layers)]
         self.bbox_embed = nn.ModuleList(box_embed_layerlist)
         self.class_embed = nn.ModuleList(class_embed_layerlist)
-        self.bbox_embed_expert = nn.ModuleList(box_embed_layerlist)
-        self.class_embed_expert = nn.ModuleList(class_embed_layerlist)
+        self.bbox_embed_expert = nn.ModuleList(
+                                                [copy.deepcopy(m) for m in box_embed_layerlist]
+                                            )
+        self.class_embed_expert = nn.ModuleList([copy.deepcopy(m) for m in class_embed_layerlist])
         self.transformer.decoder.bbox_embed = self.bbox_embed
         self.transformer.decoder.class_embed = self.class_embed
 
