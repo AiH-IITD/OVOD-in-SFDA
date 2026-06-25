@@ -4,6 +4,8 @@
 
 Official PyTorch implementation of `Adapting with an Open Mind: Leveraging Open-Vocabulary Detectors for Closed Set Source-Free Domain Adaptive Object Detection` [CVPR 2026 (Findings)]
 
+> **Note:** Code release is underway! We are currently cleaning up the codebase and performing final checks before making everything publicly available. Please check back soon for the complete release. If you'd like to stay updated, consider ⭐ starring the repository. Thank you, and we hope you find our work useful! 
+
 <p align="center">
   <img width="75%" alt="method_overview" src="overview.png">
 </p>
@@ -15,8 +17,9 @@ Official PyTorch implementation of `Adapting with an Open Mind: Leveraging Open-
 
 ## ✅ ToDo
 
-- [✅] Release training and evaluation scripts
+- [x] Release training and evaluation scripts
 - [ ] Release pretrained model weights
+- [ ] Revert scripts to relative paths wherever needed. 
 
 ## 1. Installation
 
@@ -149,7 +152,7 @@ If you find our paper or code useful, please cite our work:
 
 ## 6. Acknowledgement
 
-This project is built upon [DRU](https://github.com/lbktrinh/DRU), [MRT-release](https://github.com/JeremyZhao1998/MRT-release), [Deformable DETR](https://github.com/fundamentalvision/Deformable-DETR), and we appreciate their excellent works.
+This project is built upon [DRU](https://github.com/lbktrinh/DRU), [MRT-release](https://github.com/JeremyZhao1998/MRT-release), and we appreciate their excellent works and for laying a strong foundation for further research in this area.  
 
 ## 7. Contact
 
