@@ -19,7 +19,9 @@ Official PyTorch implementation of `Adapting with an Open Mind: Leveraging Open-
 
 - [x] Release training and evaluation scripts
 - [ ] Release pretrained model weights
-- [ ] Revert scripts to relative paths wherever needed. 
+- [ ] Revert scripts to relative paths wherever needed.
+- [ ] Add Def-DeTR codebase.
+- [ ] Add G-DINO and BMP integration setup with instructions in README. 
 
 ## 1. Installation
 
