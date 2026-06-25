@@ -1,35 +1,35 @@
-# Dynamic Retraining-Updating Mean Teacher for Source-Free Object Detection (ECCV 2024)
-*Trinh Le Ba Khanh, Huy-Hung Nguyen, Long Hoang Pham, Duong Nguyen-Ngoc Tran and Jae Wook Jeon*
+# Adapting with an Open Mind: Leveraging Open-Vocabulary Detectors for Closed Set Source-Free Domain Adaptive Object Detection
 
-Official Pytorch implementation of `Dynamic Retraining-Updating Mean Teacher for Source-Free Object Detection, ECCV 2024` [paper](https://www.ecva.net/papers/eccv_2024/papers_ECCV/papers/06893.pdf).
+*Kaustubh R Borgavi, Sarvesh Shashikumar, Chetan Arora*
+
+Official PyTorch implementation of `Adapting with an Open Mind: Leveraging Open-Vocabulary Detectors for Closed Set Source-Free Domain Adaptive Object Detection` [CVPR 2026 (Findings)]
 
 <p align="center">
-  <img width="75%" alt="scheme_DRU" src="scheme_DRU.png">
-</p> 
+  <img width="75%" alt="method_overview" src="overview.png">
+</p>
 
-The overview of our DRU method is presented in the following figure. For more details, please refer to the [paper](https://www.ecva.net/papers/eccv_2024/papers_ECCV/papers/06893.pdf).
-<p align="center">
-  <img width="100%" alt="scheme_DRU" src="DRU_overview.png">
-</p> 
+## 🔔 Updates
+
+- **[Jun 2026]** Code and pretrained weights are released.
+- **[Jun 2026]** Paper presented at CVPR 2026.
+
+## ✅ ToDo
+
+- [✅] Release training and evaluation scripts
+- [ ] Release pretrained model weights
 
 ## 1. Installation
 
 ### 1.1 Requirements
-
 - Linux, CUDA >= 11.1, GCC >= 8.4
-
 - Python >= 3.8
-
 - torch >= 1.10.1, torchvision >= 0.11.2
-
 - Other requirements
-
-  ```bash
+```bash
   pip install -r requirements.txt
-  ```
+```
 
-### 1.2 Compiling Deformable DETR CUDA operators
-
+### 1.2 Compiling CUDA Operators (if applicable)
 ```bash
 cd ./models/ops
 sh ./make.sh
@@ -39,113 +39,118 @@ python test.py
 
 ## 2. Dataset Preparation
 
-Our method used 3 popular SFOD benchmarks:
+Our method is evaluated on 3 popular SFOD benchmarks:
+- **city2foggy**: Cityscapes (source) → FoggyCityscapes with foggy level 0.02 (target)
+- **sim2city**: Sim10k (source) → Cityscapes with `car` class (target)
+- **city2bdd**: Cityscapes (source) → Bdd100k-daytime (target)
 
-- city2foggy: Cityscapes (source domain) → FoggyCityscapes with foggy level 0.02 (target domain).
-- sim2city: Sim10k (source domain) → Cityscapes with `car` class (target domain).
-- city2bdd: Cityscapes (source domain) → Bdd100k-daytime (target domain).
+Download the raw data from the official websites:
+[Cityscapes](https://www.cityscapes-dataset.com/downloads/) |
+[FoggyCityscapes](https://www.cityscapes-dataset.com/downloads/) |
+[Sim10k](https://fcav.engin.umich.edu/projects/driving-in-the-matrix) |
+[Bdd100k](https://bdd-data.berkeley.edu/)
 
-You can download the raw data from the official websites: [Cityscapes](https://www.cityscapes-dataset.com/downloads/),  [FoggyCityscapes](https://www.cityscapes-dataset.com/downloads/),  [Sim10k](https://fcav.engin.umich.edu/projects/driving-in-the-matrix), [Bdd100k](https://bdd-data.berkeley.edu/). The annotations are converted into COCO style, can download from [here](https://drive.google.com/file/d/1LB0wK9kO3eW8jpR2ZtponmYWe9x2KSiU/view?usp=sharing) (provided by [MRT-release](https://github.com/JeremyZhao1998/MRT-release)). The datasets and annotations are organized as:
+Annotations are in COCO style and can be downloaded from [here](#) (provided by [MRT-release](https://github.com/JeremyZhao1998/MRT-release)).
+
+Organize datasets and annotations as follows:
 
 ```bash
 [data_root]
 └─ cityscapes
-	└─ annotations
-		└─ cityscapes_train_cocostyle.json
-		└─ cityscapes_train_caronly_cocostyle.json
-		└─ cityscapes_val_cocostyle.json
-		└─ cityscapes_val_caronly_cocostyle.json
-	└─ leftImg8bit
-		└─ train
-		└─ val
+    └─ annotations
+        └─ cityscapes_train_cocostyle.json
+        └─ cityscapes_train_caronly_cocostyle.json
+        └─ cityscapes_val_cocostyle.json
+        └─ cityscapes_val_caronly_cocostyle.json
+    └─ leftImg8bit
+        └─ train
+        └─ val
 └─ foggy_cityscapes
-	└─ annotations
-		└─ foggy_cityscapes_train_cocostyle.json
-		└─ foggy_cityscapes_val_cocostyle.json
-	└─ leftImg8bit_foggy
-		└─ train
-		└─ val
+    └─ annotations
+        └─ foggy_cityscapes_train_cocostyle.json
+        └─ foggy_cityscapes_val_cocostyle.json
+    └─ leftImg8bit_foggy
+        └─ train
+        └─ val
 └─ sim10k
-	└─ annotations
-		└─ sim10k_train_cocostyle.json
-	└─ JPEGImages
+    └─ annotations
+        └─ sim10k_train_cocostyle.json
+    └─ JPEGImages
 └─ bdd10k
-	└─ annotations
-		└─ bdd100k_daytime_train_cocostyle.json
-		└─ bdd100k_daytime_val_cocostyle.json
-	└─ images
+    └─ annotations
+        └─ bdd100k_daytime_train_cocostyle.json
+        └─ bdd100k_daytime_val_cocostyle.json
+    └─ images
 ```
 
 ## 3. Training and Evaluation
 
 ### 3.1 Training
 
-First, run `source_only` to pretrain the Source-only model. Then, run `teaching_standard` to train the conventional Mean-Teacher framework OR `teaching_mask` to train the proposed DRU.
+First, run `source_only` to pretrain the source-only model. Then run `teaching_standard` to train the baseline or `teaching_ours` to train our proposed method.
 
-For example in `city2foggy` benchmark, first edit the files in `configs/def-detr-base/city2foggy/` to specify your own `DATA_ROOT` and `OUTPUT_DIR`, then run:
+For example, for the `city2foggy` benchmark, first edit the files in `configs/def-detr-base/city2foggy/` to specify your `DATA_ROOT` and `OUTPUT_DIR`, then run:
 
 ```bash
 sh configs/def-detr-base/city2foggy/source_only.sh
 sh configs/def-detr-base/city2foggy/teaching_standard.sh
-sh configs/def-detr-base/city2foggy/teaching_mask.sh
+sh configs/def-detr-base/city2foggy/teaching_ours.sh
 ```
 
 ### 3.2 Evaluation
 
-To evaluate the trained model and get the predicted results, run:
-
 ```bash
 sh configs/def-detr-base/city2foggy/evaluation_source_only.sh
 sh configs/def-detr-base/city2foggy/evaluation_teaching_standard.sh
-sh configs/def-detr-base/city2foggy/evaluation_teaching_mask.sh
+sh configs/def-detr-base/city2foggy/evaluation_teaching_ours.sh
 ```
 
-## 4. Experiments 
+## 4. Experiments
 
-All experiments are conducted with batch size 8 (for `source_only`: 8 labeled samples; for `teaching_standard` or `teaching_mask`: 8 unlabeled samples), on an NVIDIA Quadro RTX 8000 GPU (48GB).
+All experiments are conducted with batch size 8, on an NVIDIA [GPU] ([X]GB).
 
-**city2foggy**: Cityscapes → FoggyCityscapes(level 0.02)
+**city2foggy**: Cityscapes → FoggyCityscapes (level 0.02)
 
-Training stage   | AP@50 | logs & weights                                               |
-| ---------------- | ----- | ------------------------------------------------------------ |
-| `source_only`      | 29.5  | [Source-only](https://drive.google.com/drive/folders/1v_ixx3iPlI9MpSBoxorohLDcGW1_Kk7R?usp=sharing)|
-| `teaching_standard` | 37.4  | [MT](https://drive.google.com/drive/folders/191EkAXNAvoZFjk9FdItF7oHzGL_yMQ_m?usp=sharing)|
-| `teaching_mask`    | 43.6  | [DRU](https://drive.google.com/drive/folders/1BCndrRs6WyBsWwYI8n68KWYLzLl18yUG?usp=sharing)|
+| Training Stage      | AP@50 | Logs & Weights |
+| ------------------- | ----- | -------------- |
+| `source_only`       | -     | [Source-only](#)|
+| `teaching_standard` | -     | [Baseline](#)  |
+| `teaching_ours`     | -     | [Ours](#)      |
 
-**city2bdd**: Cityscapes → Bdd100k(daytime)
+**city2bdd**: Cityscapes → Bdd100k (daytime)
 
-Training stage   | AP@50 | logs & weights                                               |
-| ---------------- | ----- | ------------------------------------------------------------ |
-| `source_only`      | 29.1  | [Source-only](https://drive.google.com/drive/folders/1PUYNsw_dTGh-laoAAOg202E6bgJA84VE?usp=sharing)|
-| `teaching_standard` | 32.6  | [MT](https://drive.google.com/drive/folders/16IlimDDUWymv5uZCvl6bARKi6YlDF84t?usp=sharing)|
-| `teaching_mask`    | 36.6  | [DRU](https://drive.google.com/drive/folders/1uoMv1iD2-67Ohim22U88P3M1RE4MIN9K?usp=sharing)|
+| Training Stage      | AP@50 | Logs & Weights |
+| ------------------- | ----- | -------------- |
+| `source_only`       | -     | [Source-only](#)|
+| `teaching_standard` | -     | [Baseline](#)  |
+| `teaching_ours`     | -     | [Ours](#)      |
 
-**sim2city**: Sim10k → Cityscapes(car only)
+**sim2city**: Sim10k → Cityscapes (car only)
 
-Training stage   | AP@50 | logs & weights                                               |
-| ---------------- | ----- | ------------------------------------------------------------ |
-| `source_only`      | 48.9  | [Source-only](https://drive.google.com/drive/folders/1ZMM56op0HinkT102xL7uZFH3MINnoIBl?usp=sharing)|
-| `teaching_standard` | 56.2  | [MT](https://drive.google.com/drive/folders/1FmiUAAnq6ScJ_UUqg0boWg3FxRhqRwWH?usp=sharing)|
-| `teaching_mask`    | 58.7  | [DRU](https://drive.google.com/drive/folders/11g-_M3uTltme2JXAMlhZS2vcy7TENOtl?usp=sharing)|
+| Training Stage      | AP@50 | Logs & Weights |
+| ------------------- | ----- | -------------- |
+| `source_only`       | -     | [Source-only](#)|
+| `teaching_standard` | -     | [Baseline](#)  |
+| `teaching_ours`     | -     | [Ours](#)      |
 
 ## 5. Citation
 
 If you find our paper or code useful, please cite our work:
 
-```
-@inproceedings{trinh2024dru,
-  title={Dynamic Retraining-Updating Mean Teacher for Source-Free Object Detection},
-  author={Trinh Le Ba Khanh, Huy-Hung Nguyen, Long Hoang Pham, Duong Nguyen-Ngoc Tran and Jae Wook Jeon},
-  booktitle={ECCV},
-  pages={328--344},
-  year={2024}
+```bibtex
+@inproceedings{borgavi2026adapting,
+  title={Adapting with an Open Mind: Leveraging Open-Vocabulary Detectors for Closed Set Source-Free Domain Adaptive Object Detection},
+  author={Borgavi, Kaustubh R and Shashikumar, Sarvesh and Arora, Chetan},
+  booktitle={Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition},
+  pages={6570--6581},
+  year={2026}
 }
 ```
 
 ## 6. Acknowledgement
 
-This project is built upon [MRT-release](https://github.com/JeremyZhao1998/MRT-release), [Deformable DETR](https://github.com/fundamentalvision/Deformable-DETR), [DT-ST](https://github.com/DZhaoXd/DT-ST) and [MIC](https://github.com/lhoyer/MIC), and we'd like to appreciate for their excellent works.
+This project is built upon [DRU](https://github.com/lbktrinh/DRU), [MRT-release](https://github.com/JeremyZhao1998/MRT-release), [Deformable DETR](https://github.com/fundamentalvision/Deformable-DETR), and we appreciate their excellent works.
 
 ## 7. Contact
 
-If you have any issue with code or paper, feel free to contact: trinhlbk(at)skku.edu
+If you have any issues with the code or paper, feel free to contact: [aiz248319@scai.iitd.ac.in]
