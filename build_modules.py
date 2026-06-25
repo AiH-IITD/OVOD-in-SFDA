@@ -12,6 +12,7 @@ from datasets.augmentations import weak_aug, strong_aug, base_trans
 from utils.slconfig import SLConfig
 from models_fnd.dino.dino import build_dino, build_dino_criterion
 from utils.get_param_dicts import get_param_dict
+from models_fnd.dino.dino_double import build_dino_double
 
 
 def build_sampler(args, dataset, split):
@@ -104,8 +105,10 @@ def build_model(args, device):
             args.use_ema = False
         if not getattr(args, 'debug', None):
             args.debug = False
-
-        model = build_dino(args)
+        if args.mode == "teaching_standard_double" or args.mode == "teaching_mask_double":
+            model = build_dino_double(args)
+        else:
+            model = build_dino(args)
         pass
     model.to(device)
     return model
@@ -123,7 +126,7 @@ def build_criterion(args, device, only_class_loss=False, high_quality_matches=Fa
             device=device
         )
     elif args.detector == 'fnd':
-        criterion = build_dino_criterion(args)
+        criterion = build_dino_criterion(args, only_class_loss=only_class_loss)
     criterion.to(device)
     return criterion
 
